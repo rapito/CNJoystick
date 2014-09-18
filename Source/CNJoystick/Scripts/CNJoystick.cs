@@ -1,456 +1,257 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using System.Collections;
-using System.Collections.Generic;
 
-// Placement snap enum
-public enum PlacementSnap
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
+[ExecuteInEditMode]
+public class CNJoystick : CNAbstractController
 {
-    leftTop,
-    leftBottom,
-    rightTop,
-    rightBottom
-}
-/**
- * Joystic move event delegate. 
- *  Magnitude is a value from 0 to 1 inclusive.
- *  0 is Center and 1 is full radius
- */
-public delegate void JoystickMoveEventHandler(Vector3 relativeVector);
-public delegate void FingerLiftedEventHandler();
-public delegate void FingerTouchedEventHandler();
+    // Editor visible public properties
+    public Vector2 Margin { get { return _margin; } set { _margin = value; } }
+    public float DragRadius { get { return _dragRadius; } set { _dragRadius = value; } }
+    public bool IsSnappedToFinger { get { return _isSnappedToFinger; } set { _isSnappedToFinger = value; } }
 
-public class CNJoystick : MonoBehaviour
-{
-    // Private delegate to automatically switch between Mouse input and Touch input
-    private delegate void InputHandler();
+    // Serializable fields (user preferences)
+    [SerializeField]
+    private Vector2 _margin = new Vector2(5f, 5f);
+    [SerializeField]
+    private float _dragRadius = 1.5f;
+    [SerializeField]
+    private bool _isSnappedToFinger = true;
 
-    public bool remoteTesting = false;
-    // Editor variables
-    //public float pixelToUnits = 1000f;
-    public PlacementSnap placementSnap = PlacementSnap.leftBottom;
-    public Rect tapZone;
+    // Runtime used fields
+    private Transform _stickTransform;
+    private Transform _baseTransform;
+    private bool _isCurrentlyTweaking;
+    private int _currentFingerId;
+    private SpriteRenderer[] _joystickRenderers;
 
-    // Script-only public variables
-    public Camera CurrentCamera { get; set; }
-    public event JoystickMoveEventHandler JoystickMovedEvent;
-    public event FingerLiftedEventHandler FingerLiftedEvent;
-    public event FingerTouchedEventHandler FingerTouchedEvent;
-    /**
-     * Private instance variables
-     */
-    // Joystick base, large circle
-    private GameObject joystickBase;
-    // Joystick itself, small circle
-    private GameObject joystick;
-    // Radius of the large circle in world units
-    private float joystickBaseRadius;
-    // Camera frustum height
-    private float frustumHeight;
-    // Camera frustum width
-    private float frustumWidth;
-    // Finger ID to track
-    private int myFingerId = -1;
-    // Where did we touch initially
-    private Vector3 invokeTouchPosition;
-    // Relative position of the small joystick circle
-    private Vector3 joystickRelativePosition;
-    // Screen point in units cacher variable
-    private Vector3 screenPointInUnits;
-    // Magic Vector3, needed for different snap placements
-    private Vector3 relativeExtentSummand;
-    // This joystick is currently being tweaked
-    private bool isTweaking = false;
-    // Touch or Click
-    private InputHandler CurrentInputHandler;
-    // Distance to camera
-    private float distanceToCamera = 0.5f;
-    // Half of screen sizes
-    private float halfScreenHeight;
-    private float halfScreenWidth;
-    // Full screen sizes
-    private float screenHeight;
-    private float screenWidth;
-    // Snap position, relative joystick position
-    private Vector3 snapPosition;
-    // (-halfScreenWidth, -halfScreenHeight, 0f)
-    // Visually, it's the bottom left point in local units
-    private Vector3 cleanPosition;
-    // Some transform cache variables
-    private Transform joystickBaseTransform;
-    private Transform joystickTransform;
-    private Transform transformCache;
-
-    // Use this for initialization
-    void Awake()
+    /// <summary>
+    /// Neat initialization method
+    /// </summary>
+    public void OnEnable()
     {
-        CurrentCamera = transform.parent.camera;
+        TransformCache = GetComponent<Transform>();
 
-        transformCache = transform;
-        joystickBase = transformCache.FindChild("Base").gameObject;
-        joystickBaseTransform = joystickBase.transform;
-        joystick = transform.FindChild("Joystick").gameObject;
-        joystickTransform = joystick.transform;
-
-        InitialCalculations();
-
-#if UNITY_IPHONE || UNITY_ANDROID || UNITY_WP8 || UNITY_BLACKBERRY
-        CurrentInputHandler = TouchInputHandler;
+#if UNITY_EDITOR
+        // If we've instantiated the prefab but haven't parented it to a camera
+        // Editor only issue
+        if (TransformCache.parent == null) return;
 #endif
-#if UNITY_EDITOR || UNITY_WEBPLAYER || UNITY_STANDALONE
-        // gameObject.SetActive(false);
-        CurrentInputHandler = MouseInputHandler;
-#endif
-        if (remoteTesting)
-            CurrentInputHandler = TouchInputHandler;
+
+        ParentCamera = TransformCache.parent.GetComponent<Camera>();
+        _stickTransform = TransformCache.FindChild("Stick").GetComponent<Transform>();
+        _baseTransform = TransformCache.FindChild("Base").GetComponent<Transform>();
+
+        TransformCache.localPosition = InitializePosition();
     }
 
-    void Update()
+    /// <summary>
+    /// Your favorite Update method where all the magic happens
+    /// </summary>
+    private void Update()
     {
-        // Automatically call proper input handler
-        CurrentInputHandler();
-    }
+        // Check for touches
+        if (_isCurrentlyTweaking)
+        {
+            // Find our touch by fingerID
+            // It's a nullable Touch, so we can test whether it's equal to null
+            Touch? touch = GetTouchByFingerID(_currentFingerId);
 
-    /** Our touch Input handler
-     * Most of the work is done in this function
-     */
-    void TouchInputHandler()
-    {
-        // Current touch count
+            // If there's no touch, we missed it's Ended phase OR
+            // If there's one and it's phase is Ended
+            // we just reset the joystick to it's default state
+            if (touch == null || touch.Value.phase == TouchPhase.Ended)
+            {
+                // It's no longer tweaking
+                _isCurrentlyTweaking = false;
+                // Setting the stick local position back to local zero
+                _stickTransform.localPosition = Vector3.zero;
+                // It's optimized for one-time calculation inside the game
+                // In the editor, however, we may wan't to recalculate it
+                _baseTransform.localPosition = Vector3.zero;
+                // Setting our inner axis values back to zero
+                CurrentAxisValues = Vector2.zero;
+
+                // Fire our FingerLiftedEvents
+                OnFingerLifted();
+            }
+            // If we have our touch, we just continue to tweak the joystick with it
+            else
+            {
+                Touch currentTouch = touch.Value;
+                TweakJoystick(currentTouch.position);
+                // Since we already got our Touch, there's no need to check other touches
+                // We return early
+                return;
+            }
+        }
+
+        // Some optimization things
         int touchCount = Input.touchCount;
-        // If we're not yet tweaking, we should check
-        // whether any touch lands on our BoxCollider or not
-        if (!isTweaking)
-        {
-            for (int i = 0; i < touchCount; i++)
-            {
-                // Get current touch
-                Touch touch = Input.GetTouch(i);
-                // We check it's phase.
-                // If it's not a Begin phase, finger didn't tap the screen
-                // it's probably just slided to our TapRect
-                // So for the sake of optimization we won't do anything with this touch
-                // But if it's a tap, we check if it lands on our TapRect 
-                // See TouchOccured function
-                if (touch.phase == TouchPhase.Began && TouchOccured(touch.position))
-                {
-                    // We should store our finger ID 
-                    myFingerId = touch.fingerId;
-                    // If it's a valid touch, we dispatch our FingerTouchEvent
-                    if (FingerTouchedEvent != null)
-                        FingerTouchedEvent();
-                }
-            }
-        }
-        // We take Touch screen position and convert it to local joystick - relative coordinates
-        else
-        {
-            // This boolean represents if current touch has a Ended phase.
-            // It's here for more code readability
-            bool isGoingToEnd = false;
-            for (int i = 0; i < touchCount; i++)
-            {
-                Touch touch = Input.GetTouch(i);
-                // For every finger out there, we check if OUR finger has just lifted from the screen
-                if (myFingerId == touch.fingerId && touch.phase == TouchPhase.Ended)
-                {
-                    // And if it does, we reset our Joystick with this function
-                    ResetJoystickPosition();
-                    // We store our boolean here
-                    isGoingToEnd = true;
-                    // And dispatch our FingerLiftedEvent
-                    if (FingerLiftedEvent != null)
-                        FingerLiftedEvent();
-                }
-            }
-            // If user didn't lift his finger this frame
-            if (!isGoingToEnd)
-            {
-                // We find our current Touch index (it's not always equal to Finger index)
-                int currentTouchIndex = FindMyFingerId();
-                if (currentTouchIndex != -1)
-                {
-                    // And call our TweakJoystick function with this finger
-                    TweakJoystick(Input.GetTouch(currentTouchIndex).position);
-                }
-            }
-        }
-    }
-#if UNITY_EDITOR || UNITY_WEBPLAYER || UNITY_STANDALONE
-    // Mouse input handler, nothing really interesting
-    // It's pretty straightforward
-    void MouseInputHandler()
-    {
-        if (Input.GetMouseButtonDown(0))
-        {
-            TouchOccured(Input.mousePosition);
-        }
-        if (Input.GetMouseButton(0))
-        {
-            if (isTweaking)
-            {
-                TweakJoystick(Input.mousePosition);
-            }
-        }
-        if (Input.GetMouseButtonUp(0))
-        {
-            ResetJoystickPosition();
-        }
-    }
-#endif
-    /**
-     * Snappings calculation
-     * Joystick radius calculation based on specified pixel to units value
-     * Initial on-screen placement, relative to the specified camera
-     */
-    void InitialCalculations()
-    {
-        halfScreenHeight = CurrentCamera.orthographicSize;
-        halfScreenWidth = halfScreenHeight * CurrentCamera.aspect;
 
-        screenHeight = halfScreenHeight * 2f;
-        screenWidth = halfScreenWidth * 2f;
-
-        snapPosition = new Vector3();
-        cleanPosition = new Vector3(-halfScreenWidth, -halfScreenHeight);
-
-        switch (placementSnap)
-        {
-            // We do nothing, it's a default position
-            case PlacementSnap.leftBottom:
-                snapPosition.x = -halfScreenWidth + tapZone.width / 2f - tapZone.x;
-                snapPosition.y = -halfScreenHeight + tapZone.height / 2f - tapZone.y;
-
-                // Tap zone change so we can utilize Rect's .Contains() method
-                tapZone.x = 0f;
-                tapZone.y = 0f;
-                break;
-            // We swap Y component
-            case PlacementSnap.leftTop:
-                snapPosition.x = -halfScreenWidth + tapZone.width / 2f - tapZone.x;
-                snapPosition.y = halfScreenHeight - tapZone.height / 2f - tapZone.y;
-
-                // Tap zone change so we can utilize Rect's .Contains() method
-                tapZone.x = 0f;
-                tapZone.y = screenHeight - tapZone.height;
-                break;
-            // We swap X component
-            case PlacementSnap.rightBottom:
-                snapPosition.x = halfScreenWidth - tapZone.width / 2f - tapZone.x;
-                snapPosition.y = -halfScreenHeight + tapZone.height / 2f - tapZone.y;
-
-                // Tap zone change so we can utilize Rect's .Contains() method
-                tapZone.x = screenWidth - tapZone.width;
-                tapZone.y = 0f;
-                break;
-            // We swap both X and Y component
-            case PlacementSnap.rightTop:
-                snapPosition.x = halfScreenWidth - tapZone.width / 2f - tapZone.x;
-                snapPosition.y = halfScreenHeight - tapZone.height / 2f - tapZone.y;
-
-                // Tap zone change so we can utilize Rect's .Contains() method
-                tapZone.x = screenWidth - tapZone.width;
-                tapZone.y = screenHeight - tapZone.height;
-                break;
-        }
-        transformCache.localPosition = snapPosition;
-
-        SpriteRenderer joystickBaseSpriteRenderer = joystickBase.renderer as SpriteRenderer;
-        joystickBaseRadius = joystickBaseSpriteRenderer.bounds.extents.x;
-
-        /** OBSOLETE CODE USED FOR PERSPECTIVE CAMERAS 
-         *  Some crazy stuff with pyramid frustums and things
-        distanceToCamera = transform.localPosition.z;
-
-        // We need to find clear bounds of our Collider so we place our joystick to world's zero
-        transform.position = Vector3.zero;
-        transform.rotation = Quaternion.identity;
-        Bounds cleanBounds = collider.bounds;
-        Vector3 currentExtents = collider.bounds.extents;
-
-        // Then we reset it to it's normal position
-        transform.localPosition = new Vector3(0f, 0f, distanceToCamera);
-        transform.localRotation = Quaternion.identity;
-
-        // Calculating frustum height and frustum width at given distance from the camera
-        frustumHeight = 2.0f * distanceToCamera * Mathf.Tan(CurrentCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        frustumWidth = frustumHeight * CurrentCamera.aspect;
-
-        // We also need to find the radius of our base
-        // That's why we need pixelToUnits variable
-        SpriteRenderer spr = joystickBase.renderer as SpriteRenderer;
-        joystickBaseRadius = (spr.sprite.rect.height / 2) / pixelToUnits;
-
-        float x = 0f;
-        float y = 0f;
-
-        // Some dirty magic here
-        // Relative position check for optimisation
-        // If our snapping is different than leftBottom, we need to recalculate relative positions
-        // DO NOT TOUCH
-        //=======================================================================================
-        switch (placementSnap)
-        {
-            // We do nothing, it's a default position
-            case PlacementSnap.leftBottom:
-                x = -frustumWidth * 0.5f - cleanBounds.min.x;
-                y = -frustumHeight * 0.5f - cleanBounds.min.y;
-                break;
-            // We swap Y component
-            case PlacementSnap.leftTop:
-                x = -frustumWidth * 0.5f - cleanBounds.min.x;
-                y = frustumHeight * 0.5f - cleanBounds.max.y;
-                currentExtents.y = cleanBounds.extents.y + Mathf.Abs(cleanBounds.center.y * 2f);
-                break;
-            // We swap X component
-            case PlacementSnap.rightBottom:
-                x = frustumWidth * 0.5f - cleanBounds.max.x;
-                y = -frustumHeight * 0.5f - cleanBounds.min.y;
-                currentExtents.x = frustumWidth - cleanBounds.extents.x;
-                break;
-            // We swap both X and Y component
-            case PlacementSnap.rightTop:
-                x = frustumWidth * 0.5f - cleanBounds.max.x;
-                y = frustumHeight * 0.5f - cleanBounds.max.y;
-                currentExtents.y = cleanBounds.extents.y + Mathf.Abs(cleanBounds.center.y * 2f);
-                currentExtents.x = frustumWidth - cleanBounds.extents.x;
-                break;
-        }
-        // We'll use this Vector3 to calculate relative joystick position
-        // It's needed because we have to convert camera cordinates to local relative joystick position
-        relativeExtentSummand = currentExtents - cleanBounds.center;
-        transform.localPosition = new Vector3(x, y, distanceToCamera);
-        joystickRelativePosition = new Vector3();
-        //=======================================================================================
-         * */
-    }
-
-    /**
-     * Touch or mouse click occured
-     * Store initial local position
-     * Vector3 touchPosition is in Screen coordinates
-     * 
-     * Returns true if finger found
-     * Returns fals if not
-     */
-    bool TouchOccured(Vector3 touchPosition)
-    {
-        ScreenPointToRelativeFrustumPoint(touchPosition);
-        if (tapZone.Contains(screenPointInUnits))
-        {
-            isTweaking = true;
-            invokeTouchPosition = screenPointInUnits;
-            transformCache.localPosition = cleanPosition;
-            joystickBaseTransform.localPosition = invokeTouchPosition;
-            joystickTransform.localPosition = invokeTouchPosition;
-            return true;
-        }
-
-        /** OBSOLETE
-        Ray screenRay = CurrentCamera.ScreenPointToRay(touchPosition);
-        RaycastHit hit;
-        if (Physics.Raycast(screenRay, out hit, distanceToCamera * 2f))
-        {
-            if (hit.collider == collider)
-            {
-                isTweaking = true;
-                invokeTouchPosition = transform.InverseTransformPoint(hit.point);
-                invokeTouchPosition.z = 0f;
-                joystickBase.transform.localPosition = invokeTouchPosition;
-                joystick.transform.localPosition = invokeTouchPosition;
-                return true;
-            }
-        }* */
-        return false;
-    }
-
-    /**
-     * Try to drag small joystick knob to it's desired position (in Screen coordinates)
-     */
-    void TweakJoystick(Vector3 desiredPosition)
-    {
-        // We convert our screen coordinates of the touch to local frustum coordinates
-        ScreenPointToRelativeFrustumPoint(desiredPosition);
-        // And then we find our joystick relative position
-        Vector3 dragDirection = screenPointInUnits - invokeTouchPosition;
-        // If the joystick is inside it's base, we keep it's position under a finger
-        // sqrMagnitude is used for optimization, as Multiplication operation is much cheaper than Square Root
-        if (dragDirection.sqrMagnitude <= joystickBaseRadius * joystickBaseRadius)
-        {
-            joystickTransform.localPosition = screenPointInUnits;
-            dragDirection /= joystickBaseRadius;
-        }
-        // But if we drag our finger too far, joystick will remain at the border of it's base
-        else
-        {
-            joystickTransform.localPosition = invokeTouchPosition + dragDirection.normalized * joystickBaseRadius;
-            dragDirection.Normalize();
-        }
-
-        // If we're tweaking, we should dispatch our event
-        if (JoystickMovedEvent != null)
-        {
-            JoystickMovedEvent(dragDirection);
-        }
-    }
-
-    /**
-     * Resetting BOTH joystick sprites to their initial position
-     */
-    void ResetJoystickPosition()
-    {
-        isTweaking = false;
-        transformCache.localPosition = snapPosition;
-        joystickBaseTransform.localPosition = Vector3.zero;
-        joystickTransform.localPosition = Vector3.zero;
-        myFingerId = -1;
-    }
-
-    /**
-     * We need to convert our touch or mouse position to our local joystick position
-     */
-    void ScreenPointToRelativeFrustumPoint(Vector3 point)
-    {
-        // Percentage
-        float screenPointXPercent = point.x / Screen.width;
-        float screenPointYPercent = point.y / Screen.height;
-
-        screenPointInUnits.x = screenPointXPercent * screenWidth;
-        screenPointInUnits.y = screenPointYPercent * screenHeight;
-        screenPointInUnits.z = 0f;
-        /** OBSOLETE
-        // Dirty magic again, finding super - local coordinates of the touch position
-        joystickRelativePosition.x = screenPointXPercent * frustumWidth;
-        joystickRelativePosition.y = screenPointYPercent * frustumHeight;
-        joystickRelativePosition -= relativeExtentSummand;
-        joystickRelativePosition.z = 0f;
-         * */
-    }
-
-    // Sometimes when user lifts his finger, current touch index changes.
-    // To keep track of our finger, we need to know which finger has the user lifted
-    int FindMyFingerId()
-    {
-        int touchCount = Input.touchCount;
+        // For every touch out there
         for (int i = 0; i < touchCount; i++)
         {
-            if (Input.GetTouch(i).fingerId == myFingerId)
+            // God bless local variables of value types
+            Touch currentTouch = Input.GetTouch(i);
+
+            // Check if we're interested in this touch
+            if (currentTouch.phase == TouchPhase.Began && IsTouchInZone(currentTouch.position))
             {
-                // We return current Touch index if it's our finger
-                return i;
+                // If we are, capture the touch and make it ours
+
+                _isCurrentlyTweaking = true;
+                // Store it's finger ID so we can find it later
+                _currentFingerId = currentTouch.fingerId;
+
+                // Place joystick under the finger 
+                // The "no jumping" logic is also in this method
+                PlaceJoystickBaseUnderTheFinger(currentTouch);
+
+                // Fire our FingerTouchedEvent
+                OnFingerTouched();
+
+                // We don't need to check other touches
+                break;
             }
         }
-        // And we return -1 if there's no such finger
-        // Usually this happend after user lifts the finger which he touched first
-        return -1;
     }
 
-    void OnDrawGizmos()
+    /// <summary>
+    /// Function for joystick tweaking (moving under the finger)
+    /// The values of the Axis are also calculated here
+    /// </summary>
+    /// <param name="touchPosition">Current touch position in screen cooridnates (pixels)</param>
+    private void TweakJoystick(Vector2 touchPosition)
     {
-        Gizmos.color = Color.red;
-        Vector3 gizmoPosition = new Vector3(transform.position.x + tapZone.x, transform.position.y + tapZone.y, transform.position.z);
-        Gizmos.DrawWireCube(gizmoPosition, new Vector3(tapZone.width, tapZone.height));
+        // First, let's find our current touch position in world space
+        Vector3 worldTouchPosition = ParentCamera.ScreenToWorldPoint(touchPosition);
+
+        // Now we need to find a directional vector from the center of the joystick
+        // to the touch position
+        Vector3 differenceVector = (worldTouchPosition - _baseTransform.position);
+
+        // If we're out of the drag range
+        if (differenceVector.sqrMagnitude >
+            DragRadius * DragRadius)
+        {
+            // Normalize this directional vector
+            differenceVector.Normalize();
+
+            //  And place the stick to it's extremum position
+            _stickTransform.position = _baseTransform.position +
+                differenceVector * DragRadius;
+        }
+        else
+        {
+            // If we're inside the drag range, just place it under the finger
+            _stickTransform.position = worldTouchPosition;
+        }
+
+        // Store calculated axis values to our private variable
+        CurrentAxisValues = differenceVector;
+
+        // We also fire our event if there are subscribers
+        OnControllerMoved(differenceVector);
     }
 
+    /// <summary>
+    /// Snap the joystick under the finger if it's expected
+    /// </summary>
+    /// <param name="touch">Current touch position in screen pixels</param>
+    private void PlaceJoystickBaseUnderTheFinger(Touch touch)
+    {
+        if (!_isSnappedToFinger) return;
+
+        _baseTransform.position = ParentCamera.ScreenToWorldPoint(touch.position);
+    }
+
+    /// <summary>
+    /// Utility method, chechks whether the touch is inside the touch zone (green rect)
+    /// </summary>
+    /// <param name="touchPosition">Current touch position in screen pixels</param>
+    /// <returns>Whether it's inside of the touch zone</returns>
+    private bool IsTouchInZone(Vector2 touchPosition)
+    {
+        return CalculatedTouchZone.Contains(ParentCamera.ScreenToWorldPoint(touchPosition), false);
+    }
+
+    /// <summary>
+    /// Calculates local position based on margins
+    /// </summary>
+    /// <returns>Calculated position</returns>
+    private Vector3 InitializePosition()
+    {
+#if !UNITY_EDITOR
+        if (_calculatedPosition != null)
+            return _calculatedPosition.Value;
+#endif
+
+#if UNITY_EDITOR
+        // Editor error "handling"
+        // Happens when you duplicate the joystick in the editor window
+        // causes a bit of recursion, but it's ok, it will just try to calculate joystick position twice
+        if (ParentCamera == null)
+            OnEnable();
+#endif
+
+        // Camera based calculations (different aspect ratios)
+        float halfHeight = ParentCamera.orthographicSize;
+        float halfWidth = halfHeight * ParentCamera.aspect;
+
+        var newPosition = new Vector3(0f, 0f, 0f);
+
+        if (((int)Anchor & (int)AnchorsBase.Left) != 0)
+            newPosition.x = -halfWidth + Margin.x;
+        else
+            newPosition.x = halfWidth - Margin.x;
+
+        if (((int)Anchor & (int)AnchorsBase.Top) != 0)
+            newPosition.y = halfHeight - Margin.y;
+        else
+            newPosition.y = -halfHeight + Margin.y;
+
+        CalculatedTouchZone = new Rect(
+            TransformCache.position.x - TouchZoneSize.x / 2f,
+            TransformCache.position.y - TouchZoneSize.y / 2f,
+            TouchZoneSize.x,
+            TouchZoneSize.y);
+
+        return newPosition;
+    }
+
+    // Some editor-only stuff. It won't compile to any of the builds
+#if UNITY_EDITOR
+    private void OnDrawGizmosSelected()
+    {
+        // We have no need to recalculate the base position
+        // Tweaking these things in Playmode won't save anyway
+        if (!EditorApplication.isPlaying)
+            TransformCache.localPosition = InitializePosition();            
+
+        // Store the Gizmos color to restore everything back once we finish
+        Color color = Gizmos.color;
+        Gizmos.color = Color.green;
+
+        // It's a local variable for more readability
+        Vector3 localRectCenter = new Vector3(
+                CalculatedTouchZone.x + CalculatedTouchZone.width / 2f,
+                CalculatedTouchZone.y + CalculatedTouchZone.height / 2f,
+                TransformCache.position.z);
+
+        Gizmos.DrawWireCube(
+            localRectCenter,
+            new Vector3(TouchZoneSize.x, TouchZoneSize.y, 0f));
+        
+        // Perfect time to restore the original color back
+        // It's rarely an issue though
+        Gizmos.color = color;
+    }
+#endif
 
 
 }
