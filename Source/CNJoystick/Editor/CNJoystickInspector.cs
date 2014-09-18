@@ -10,11 +10,11 @@ public class CNJoystickInspector : CNAbstractControllerInspector
 
         EditorGUI.BeginChangeCheck();
 
-        cnJoystick.Margin = EditorGUILayout.Vector2Field("Margins:", cnJoystick.Margin);
         cnJoystick.DragRadius = EditorGUILayout.FloatField("Drag radius:", cnJoystick.DragRadius);
         cnJoystick.IsSnappedToFinger = EditorGUILayout.Toggle("Snaps to finger:", cnJoystick.IsSnappedToFinger);
+        cnJoystick.IsHiddenIfNotTweaking = EditorGUILayout.Toggle("Hide on release:", cnJoystick.IsHiddenIfNotTweaking);
 
         if (EditorGUI.EndChangeCheck())
-            SceneView.RepaintAll();
+            cnJoystick.OnEnable();
     }
 }

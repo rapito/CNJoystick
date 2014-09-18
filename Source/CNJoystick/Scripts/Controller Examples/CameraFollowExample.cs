@@ -3,7 +3,7 @@ using System.Collections;
 
 public class CameraFollowExample : MonoBehaviour
 {
-    public CNJoystick RotateJoystick;
+    public CNAbstractController RotateJoystick;
     public float RotationSpeed = 10f;
 
     private Transform _transformCache;
@@ -21,8 +21,10 @@ public class CameraFollowExample : MonoBehaviour
     {
         if (RotateJoystick != null)
         {
-            float rotation = RotateJoystick.GetAxis("Horizontal");
-            _transformCache.RotateAround(_parentTransformCache.position, Vector3.up, rotation * RotationSpeed * Time.deltaTime);
+            float rotationX = RotateJoystick.GetAxis("Horizontal") * RotationSpeed * Time.deltaTime;
+            float rotationY = RotateJoystick.GetAxis("Vertical") * RotationSpeed * Time.deltaTime;
+            _parentTransformCache.Rotate(0f, rotationX, 0f, Space.World);
+            _parentTransformCache.Rotate(-rotationY, 0f, 0f);
         }
 
         /*

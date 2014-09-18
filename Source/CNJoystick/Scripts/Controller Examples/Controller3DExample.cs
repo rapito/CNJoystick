@@ -9,7 +9,7 @@ public class Controller3DExample : MonoBehaviour
 
     public float movementSpeed = 5f;
 
-    public CNJoystick MovementJoystick;
+    public CNAbstractController MovementJoystick;
 
     private CharacterController _characterController;
     private Transform _mainCameraTransform;

@@ -7,9 +7,7 @@ public class CNAbstractControllerInspector : Editor
 {
     public override void OnInspectorGUI()
     {
-      //  base.OnInspectorGUI();
-
-        
+        base.OnInspectorGUI();
         var cnAbstractController = (CNAbstractController)target;
 
         EditorGUI.BeginChangeCheck();
@@ -20,10 +18,10 @@ public class CNAbstractControllerInspector : Editor
         cnAbstractController.AxisNameY = EditorGUILayout.TextField("Y Axis:", cnAbstractController.AxisNameY);
         cnAbstractController.TouchZoneSize = EditorGUILayout.Vector2Field("Touch Zone Size:",
             cnAbstractController.TouchZoneSize);
+        cnAbstractController.Margin = EditorGUILayout.Vector2Field("Margins:", cnAbstractController.Margin);
 
         if (EditorGUI.EndChangeCheck())
             SceneView.RepaintAll();
-        
     }
 }
 
