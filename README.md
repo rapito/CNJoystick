@@ -4,7 +4,8 @@ CNJoystick
 Unity3D high performance mobile joystick
 
 -----------------------
-Available for free on the AssetStore (currenly outdated, please use the package from Package folder!)
-https://github.com/KumoKairo/CNJoystick/tree/master/Package
+Please read the README.pdf file first https://github.com/KumoKairo/CNJoystick/blob/master/Source/README.pdf?raw=true
 
-https://www.assetstore.unity3d.com/#/content/15233
+Asset store link (can be outdated) http://u3d.as/6BR
+
+
