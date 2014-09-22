@@ -14,7 +14,9 @@ public class CNJoystickInspector : CNAbstractControllerInspector
         cnJoystick.SnapsToFinger = EditorGUILayout.Toggle("Snaps to finger:", cnJoystick.SnapsToFinger);
         cnJoystick.IsHiddenIfNotTweaking = EditorGUILayout.Toggle("Hide on release:", cnJoystick.IsHiddenIfNotTweaking);
 
-        if (EditorGUI.EndChangeCheck())
-            cnJoystick.OnEnable();
+        if (!EditorGUI.EndChangeCheck()) return;
+
+        EditorUtility.SetDirty(cnJoystick);
+        cnJoystick.OnEnable();
     }
 }

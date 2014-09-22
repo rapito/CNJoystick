@@ -8,7 +8,12 @@ public class CNThrowableTouchpadInspector : CNTouchpadInspector
     {
         base.OnInspectorGUI();
 
+        EditorGUI.BeginChangeCheck();
+
         var cnThrowTouchpad = (CNThrowableTouchpad)target;
         cnThrowTouchpad.SpeedDecay = EditorGUILayout.Slider("Speed decay:", cnThrowTouchpad.SpeedDecay, 0f, 1f);
+
+        if (EditorGUI.EndChangeCheck())
+            EditorUtility.SetDirty(cnThrowTouchpad);
     }
 }

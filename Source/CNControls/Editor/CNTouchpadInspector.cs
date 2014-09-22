@@ -9,7 +9,12 @@ public class CNTouchpadInspector : CNAbstractControllerInspector
     {
         base.OnInspectorGUI();
 
+        EditorGUI.BeginChangeCheck();
+
         var cnTouchpad = (CNTouchpad)target;
         cnTouchpad.IsAlwaysNormalized = EditorGUILayout.Toggle("Normalize:", cnTouchpad.IsAlwaysNormalized);
+
+        if (EditorGUI.EndChangeCheck())
+            EditorUtility.SetDirty(cnTouchpad);
     }
 }

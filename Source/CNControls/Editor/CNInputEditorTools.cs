@@ -60,10 +60,6 @@ public class CNInputEditorTools : EditorWindow
         GameObject instantiatedControl = GameObject.Instantiate(controlObject, Vector3.zero, Quaternion.identity) as GameObject;
         instantiatedControl.transform.parent = cameraGo.GetComponent<Transform>();
         instantiatedControl.name = controlName;
-        CNAbstractController controller = instantiatedControl.GetComponent<CNAbstractController>();
-        controller.TouchZoneSize = new Vector2(6f, 6f);
-        if(controller is CNTouchpad)
-            controller.Anchor = CNAbstractController.Anchors.RightBottom;
-        controller.OnEnable();
+        instantiatedControl.GetComponent<CNAbstractController>().OnEnable();
     }
 }

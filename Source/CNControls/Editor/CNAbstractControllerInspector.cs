@@ -23,8 +23,10 @@ public class CNAbstractControllerInspector : Editor
         cnAbstractController.Margins = EditorGUILayout.Vector2Field("Margins:", cnAbstractController.Margins);
 
         // We need to repaint because it recalculates touchzone size and position based on margins and anchor
-        if (EditorGUI.EndChangeCheck())
-            SceneView.RepaintAll();
+        if (!EditorGUI.EndChangeCheck()) return;
+
+        EditorUtility.SetDirty(cnAbstractController);
+        SceneView.RepaintAll();
     }
 }
 
