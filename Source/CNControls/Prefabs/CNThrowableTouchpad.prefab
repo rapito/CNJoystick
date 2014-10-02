@@ -42,9 +42,9 @@ MonoBehaviour:
   _axisNameX: Horizontal
   _axisNameY: Vertical
   _touchZoneSize: {x: 6, y: 6}
-  _margin: {x: 3, y: 3}
+  _margins: {x: 3, y: 3}
   _isAlwaysNormalized: 0
-  _speedDecay: .99000001
+  _speedDecay: .949999988
 --- !u!1001 &100100000
 Prefab:
   m_ObjectHideFlags: 1

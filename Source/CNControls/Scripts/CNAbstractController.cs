@@ -36,7 +36,7 @@ public abstract class CNAbstractController : MonoBehaviour
         LeftTop = AnchorsBase.Left | AnchorsBase.Top,
         LeftBottom = AnchorsBase.Left | AnchorsBase.Bottom,
         RightTop = AnchorsBase.Right | AnchorsBase.Top,
-        RightBottom = AnchorsBase.Right | AnchorsBase.Bottom
+        RightBottom = AnchorsBase.Right | AnchorsBase.Bottom,
     }
 
     // --------------------------------
@@ -59,7 +59,7 @@ public abstract class CNAbstractController : MonoBehaviour
     /// Margins set the distance to the screen borders in units. Resolution-independent
     /// </summary>
     public Vector2 Margins { get { return _margins; } set { _margins = value; } }
-    
+
     // TODO: check whether different touch zones intersect (it can be avoided manually, but little things matter)
     /// <summary>
     ///  Touch zone size indicates how big is the sensitive area of the control

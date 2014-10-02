@@ -97,10 +97,11 @@ MonoBehaviour:
   _anchor: 9
   _axisNameX: Horizontal
   _axisNameY: Vertical
-  _touchZoneSize: {x: 2, y: 2}
-  _margin: {x: 5, y: 5}
+  _touchZoneSize: {x: 6, y: 6}
+  _margins: {x: 3, y: 3}
   _dragRadius: 1.5
-  _isSnappedToFinger: 1
+  _snapsToFinger: 1
+  _isHiddenIfNotTweaking: 0
 --- !u!212 &21200000
 SpriteRenderer:
   m_ObjectHideFlags: 1
