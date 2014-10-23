@@ -12,14 +12,11 @@ public class CNAbstractControllerInspector : Editor
         var cnAbstractController = (CNAbstractController)target;
 
         DisplayScriptField();
-
-        EditorGUI.BeginChangeCheck();
-
+        DisplayAxisNames(cnAbstractController);
         DisplayAnchorTouchZoneSizeMargins(cnAbstractController);
 
-        // We need to repaint because it recalculates touchzone size and position based on margins and anchor
-        if (!EditorGUI.EndChangeCheck()) return;
-
+        // Sometimes simple checks for changed properties simply don't work
+        // We will just set our thing dirty (oh yeah)
         EditorUtility.SetDirty(cnAbstractController);
         SceneView.RepaintAll();
     }
@@ -34,7 +31,7 @@ public class CNAbstractControllerInspector : Editor
     {
         cnAbstractController.Anchor = (CNAbstractController.Anchors)
             EditorGUILayout.EnumPopup("Anchor:", cnAbstractController.Anchor);
-        DisplayAxisNames(cnAbstractController);
+        
         cnAbstractController.TouchZoneSize = EditorGUILayout.Vector2Field("Touch Zone Size:",
             cnAbstractController.TouchZoneSize);
         cnAbstractController.Margins = EditorGUILayout.Vector2Field("Margins:", cnAbstractController.Margins);

@@ -68,23 +68,6 @@ public class CNTouchpad : CNAbstractController
     }
 
     /// <summary>
-    /// Good old Update method where all the magic happens
-    /// </summary>
-    protected virtual void Update()
-    {
-        // If we tweaked, we return and don't check for other touches
-        if (TweakIfNeeded())
-            return;
-
-        // If we didn't tweak, we try to capture any touch
-        Touch currentTouch;
-        if (!IsTouchCaptured(out currentTouch)) return;
-
-        // Setting our initial "previous" position
-        PreviousPosition = ParentCamera.ScreenToWorldPoint(currentTouch.position);
-    }
-
-    /// <summary>
     /// Automatically called by TweakIfNeeded
     /// </summary>
     /// <param name="touchPosition">Touch position in screen pixels</param>
@@ -102,6 +85,11 @@ public class CNTouchpad : CNAbstractController
         OnControllerMoved(difference);
 
         PreviousPosition = worldPosition;
+    }
+
+    protected override void MoreUpdateLogic(Touch capturedTouch)
+    {
+        PreviousPosition = ParentCamera.ScreenToWorldPoint(capturedTouch.position);
     }
 
 #if UNITY_EDITOR

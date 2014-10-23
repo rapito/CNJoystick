@@ -168,7 +168,7 @@ public abstract class CNAbstractController : MonoBehaviour
     public virtual void Disable()
     {
         CurrentAxisValues = Vector2.zero;
-
+        IsCurrentlyTweaking = false;
         gameObject.SetActive(false);
         // Unity defined MonoBehaviour property
         enabled = false;
@@ -201,6 +201,19 @@ public abstract class CNAbstractController : MonoBehaviour
         ParentCamera = TransformCache.parent.GetComponent<Camera>();
 
         TransformCache.localPosition = InitializePosition();
+    }
+
+    protected virtual void Update()
+    {
+        // Check for touches
+        if (TweakIfNeeded())
+            return;
+
+        // If we didn't tweak, we try to capture any touch
+        Touch capturedTouch;
+        if (!IsTouchCaptured(out capturedTouch)) return;
+
+        MoreUpdateLogic(capturedTouch);
     }
 
     /// <summary>
@@ -418,6 +431,7 @@ public abstract class CNAbstractController : MonoBehaviour
         return CalculatedTouchZone.Contains(ParentCamera.ScreenToWorldPoint(touchPosition), false);
     }
 
+
     /// <summary>
     /// Custom Tweaking method
     /// Implement it to achieve custom tweaking behaviour
@@ -425,6 +439,8 @@ public abstract class CNAbstractController : MonoBehaviour
     /// <param name="touchPosition">Current touch position in screen pixels
     /// It should convert these pixels to units, it should be totally resolution-independent</param>
     protected abstract void TweakControl(Vector2 touchPosition);
+
+    protected abstract void MoreUpdateLogic(Touch capturedTouch);
 
     // Some editor-only stuff. It won't compile to any of the builds
 #if UNITY_EDITOR
