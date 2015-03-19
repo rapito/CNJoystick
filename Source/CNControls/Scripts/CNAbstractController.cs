@@ -205,6 +205,9 @@ public abstract class CNAbstractController : MonoBehaviour
 
     protected virtual void Update()
     {
+        // Recalculate position always
+        TransformCache.localPosition = InitializePosition();
+        
         // Check for touches
         if (TweakIfNeeded())
             return;
